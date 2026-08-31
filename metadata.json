@@ -1,0 +1,6 @@
+{
+  "name": "Malware Scanner",
+  "description": "Aplikasi pemindai virus, malware, dan deteksi risiko keamanan HP dengan status keamanan dan panduan pembersihan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
