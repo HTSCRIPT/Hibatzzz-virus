@@ -1,0 +1,88 @@
+name: Auto Build & Release APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Prepare Local Environment & Dummy Secrets
+        run: |
+          # Buat file .env jika belum ada
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          elif [ ! -f .env ]; then
+            touch .env
+          fi
+
+          # Buat debug.keystore
+          if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
+            base64 -d debug.keystore.base64 > debug.keystore || true
+          fi
+          if [ ! -f debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          # Buat my-upload-key.jks
+          if [ ! -f my-upload-key.jks ]; then
+            keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Upload Key,O=Android,C=US"
+          fi
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Build Debug APK
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Organize APK Files
+        id: organize_apks
+        run: |
+          mkdir -p release_apk
+          find app/build/outputs/apk -type f -name "*.apk" -exec cp {} release_apk/GuardianMobile.apk \;
+          ls -la release_apk/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GuardianMobile-APK
+          path: release_apk/GuardianMobile.apk
+          retention-days: 30
+
+      - name: Auto Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: release-auto-${{ github.run_number }}
+          name: "Guardian Mobile - Build #${{ github.run_number }}"
+          body: |
+            ## Automated Android Release
+            - **Commit:** `${{ github.sha }}`
+            - **Build Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - File APK siap di-install di bawah ini 👇
+          files: release_apk/GuardianMobile.apk
+          draft: false
+          prerelease: false
