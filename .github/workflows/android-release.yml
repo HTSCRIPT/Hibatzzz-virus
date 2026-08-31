@@ -35,33 +35,40 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: wrapper
+          generate-job-summary: false
 
-      - name: Prepare Environment Files
+      - name: Ensure Gradle Wrapper Exists
+        run: |
+          if [ ! -f "gradlew" ]; then
+            echo "Generating Gradle wrapper..."
+            gradle wrapper --gradle-version 8.11.1 || gradle wrapper
+          fi
+          chmod +x gradlew
+
+      - name: Prepare Environment & Secrets
         run: |
           if [ ! -f .env ] && [ -f .env.example ]; then
             cp .env.example .env
           fi
-          # Restore debug keystore if base64 encoded file exists
           if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+            base64 -d debug.keystore.base64 > debug.keystore || true
           fi
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
 
       - name: Build Debug APK
         if: ${{ github.event_name == 'push' || inputs.build_type == 'debug' || inputs.build_type == 'all' }}
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Build Release APK
         if: ${{ inputs.build_type == 'release' || inputs.build_type == 'all' }}
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Organize APK Artifacts
         run: |
           mkdir -p output_apks
-          find app/build/outputs/apk -name "*.apk" -exec cp {} output_apks/ \;
+          find app/build/outputs/apk -name "*.apk" -exec cp {} output_apks/ \; || true
           ls -la output_apks/
 
       - name: Upload APK as Workflow Artifact
