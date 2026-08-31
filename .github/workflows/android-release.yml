@@ -34,38 +34,57 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Prepare Environment & Secrets
+      - name: Prepare Keystore & Environment
         run: |
+          # Buat file .env jika belum ada
           if [ ! -f .env ] && [ -f .env.example ]; then
             cp .env.example .env
           fi
+          
+          # Restore debug keystore
           if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
-            base64 -d debug.keystore.base64 > debug.keystore || true
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
+
+          # Buat dummy upload key untuk build release jika belum ada
+          if [ ! -f my-upload-key.jks ]; then
+            keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Upload Key,O=Android,C=US"
+          fi
+
+      - name: Install & Setup Gradle 8.11.1
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
+          unzip -q gradle-8.11.1-bin.zip
+          echo "$GITHUB_WORKSPACE/gradle-8.11.1/bin" >> $GITHUB_PATH
 
       - name: Build Debug APK
         if: ${{ github.event_name == 'push' || inputs.build_type == 'debug' || inputs.build_type == 'all' }}
-        run: gradle assembleDebug --no-daemon
+        run: |
+          gradle :app:assembleDebug --stacktrace
 
       - name: Build Release APK
         if: ${{ inputs.build_type == 'release' || inputs.build_type == 'all' }}
-        run: gradle assembleRelease --no-daemon
+        env:
+          STORE_PASSWORD: "android"
+          KEY_PASSWORD: "android"
+        run: |
+          gradle :app:assembleRelease --stacktrace
 
-      - name: Organize APK Artifacts
+      - name: Collect Output APKs
         run: |
           mkdir -p output_apks
-          find app/build/outputs/apk -name "*.apk" -exec cp {} output_apks/ \; || true
+          find app/build/outputs/apk -name "*.apk" -exec cp {} output_apks/ \;
           ls -la output_apks/
 
-      - name: Upload APK as Workflow Artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GuardianMobile-APKs
+          name: GuardianMobile-APK
           path: output_apks/*.apk
           retention-days: 14
 
